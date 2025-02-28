@@ -9,18 +9,20 @@ jobs:
   check-android-manifest:
     name: Compare Merged AndroidManifest.xml
     runs-on: ubuntu-latest
+    outputs:
+      manifest_changed: ${{ steps.check_manifest.outputs.changed }}
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Ensure full history for accurate diffing
+          fetch-depth: 0  # Full history for accurate diff
 
       - name: Set Up JDK
         uses: actions/setup-java@v3
         with:
-          distribution: 'temurin'  # Or 'zulu' based on your setup
-          java-version: '17'  # Adjust as needed
+          distribution: 'temurin'
+          java-version: '17'
 
       - name: Set Up Gradle
         uses: gradle/gradle-build-action@v3
@@ -28,11 +30,16 @@ jobs:
       - name: Generate Merged AndroidManifest.xml
         run: |
           ./gradlew :app:processDebugManifest
-          cp app/build/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml merged_AndroidManifest.xml
+          cp app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml merged_AndroidManifest.xml
 
       - name: Check for AndroidManifest.xml Changes
+        id: check_manifest
         run: |
-          git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt || true
+          if git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt; then
+            echo "changed=false" >> $GITHUB_ENV
+          else
+            echo "changed=true" >> $GITHUB_ENV
+          fi
 
       - name: Upload Manifest Diff (For Review)
         uses: actions/upload-artifact@v4
@@ -40,10 +47,15 @@ jobs:
           name: manifest-diff
           path: manifest_diff.txt
 
-      - name: Fail if Manifest Changes Detected
-        if: ${{ hashFiles('manifest_diff.txt') != '' }}
-        run: |
-          echo "❌ AndroidManifest.xml has changes!"
-          echo "📢 Approval required from @your-team"
-          exit 1
+  require-approval:
+    name: Ensure Manifest is Approved
+    needs: check-android-manifest
+    if: env.changed == 'true'  # Run only if manifest changed
+    runs-on: ubuntu-latest
+    environment: "Manifest Approval"  # 🔹 Enforces approval from user1 & user2
 
+    steps:
+      - name: Block Until Approved
+        run: |
+          echo "❌ Approval required from anikamath2!"
+          exit 1
