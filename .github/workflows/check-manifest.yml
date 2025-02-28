@@ -1,91 +1,91 @@
-name: Ensure Manifest Approval
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, review_requested, review_submitted]
-
-permissions:
-  contents: read
-  pull-requests: write
-  actions: write  # ✅ Allows triggering a re-run
-
-jobs:
-  require-approval:
-    name: Ensure Manifest is Approved
-    runs-on: ubuntu-latest
-    environment:
-      name: ManifestApproval  # 👈 Uses GitHub Environment Protection Rules
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set Up JDK
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Set Up Gradle
-        uses: gradle/gradle-build-action@v3
-
-      - name: Generate Merged AndroidManifest.xml
-        run: |
-          ./gradlew :app:processDebugManifest
-          cp app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml merged_AndroidManifest.xml
-
-      - name: Check for AndroidManifest.xml Changes
-        id: check_manifest
-        run: |
-          if git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt; then
-            echo "::set-output name=manifest_changed::false"
-          else
-            echo "::set-output name=manifest_changed::true"
-          fi
-
-      - name: Upload Manifest Diff (For Review)
-        uses: actions/upload-artifact@v4
-        with:
-          name: manifest-diff
-          path: manifest_diff.txt
-
-      - name: Check for Approval
-        id: check_approval
-        if: steps.check_manifest.outputs.manifest_changed == 'true'
-        run: |
-          APPROVED=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews --jq '.[] | select(.state=="APPROVED")')
-          if [[ -n "$APPROVED" ]]; then
-            echo "::set-output name=manifest_approved::true"
-          else
-            echo "::set-output name=manifest_approved::false"
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Post PR Comment on Manifest Change
-        if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approval.outputs.manifest_approved == 'false'
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo, number } = context.issue;
-            github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: number,
-              body: "❌ **Manifest changes detected!**\n\n🚨 Please take the necessary approvals for manifest changes before proceeding."
-            });
-
-      - name: Fail Workflow if Manifest Changes Detected and Not Approved
-        if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approval.outputs.manifest_approved == 'false'
-        run: |
-          echo "❌ AndroidManifest.xml has changes!"
-          echo "🚨 Approval required before proceeding!"
-          exit 1  # ❌ Fails workflow to block PR merge
-
-      - name: Approvals Granted – Pass Workflow
-        if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approval.outputs.manifest_approved == 'true'
-        run: |
-          echo "✅ Manifest changes approved. Proceeding!"
+#name: Ensure Manifest Approval
+#
+#on:
+#  pull_request:
+#    types: [opened, synchronize, reopened, review_requested, review_submitted]
+#
+#permissions:
+#  contents: read
+#  pull-requests: write
+#  actions: write  # ✅ Allows triggering a re-run
+#
+#jobs:
+#  require-approval:
+#    name: Ensure Manifest is Approved
+#    runs-on: ubuntu-latest
+#    environment:
+#      name: ManifestApproval  # 👈 Uses GitHub Environment Protection Rules
+#
+#    steps:
+#      - name: Checkout Code
+#        uses: actions/checkout@v4
+#        with:
+#          fetch-depth: 0
+#
+#      - name: Set Up JDK
+#        uses: actions/setup-java@v3
+#        with:
+#          distribution: 'temurin'
+#          java-version: '17'
+#
+#      - name: Set Up Gradle
+#        uses: gradle/gradle-build-action@v3
+#
+#      - name: Generate Merged AndroidManifest.xml
+#        run: |
+#          ./gradlew :app:processDebugManifest
+#          cp app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml merged_AndroidManifest.xml
+#
+#      - name: Check for AndroidManifest.xml Changes
+#        id: check_manifest
+#        run: |
+#          if git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt; then
+#            echo "::set-output name=manifest_changed::false"
+#          else
+#            echo "::set-output name=manifest_changed::true"
+#          fi
+#
+#      - name: Upload Manifest Diff (For Review)
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: manifest-diff
+#          path: manifest_diff.txt
+#
+#      - name: Check for Approval
+#        id: check_approval
+#        if: steps.check_manifest.outputs.manifest_changed == 'true'
+#        run: |
+#          APPROVED=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews --jq '.[] | select(.state=="APPROVED")')
+#          if [[ -n "$APPROVED" ]]; then
+#            echo "::set-output name=manifest_approved::true"
+#          else
+#            echo "::set-output name=manifest_approved::false"
+#          fi
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#
+#      - name: Post PR Comment on Manifest Change
+#        if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approval.outputs.manifest_approved == 'false'
+#        uses: actions/github-script@v6
+#        with:
+#          github-token: ${{ secrets.GITHUB_TOKEN }}
+#          script: |
+#            const { owner, repo, number } = context.issue;
+#            github.rest.issues.createComment({
+#              owner,
+#              repo,
+#              issue_number: number,
+#              body: "❌ **Manifest changes detected!**\n\n🚨 Please take the necessary approvals for manifest changes before proceeding."
+#            });
+#
+#      - name: Fail Workflow if Manifest Changes Detected and Not Approved
+#        if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approval.outputs.manifest_approved == 'false'
+#        run: |
+#          echo "❌ AndroidManifest.xml has changes!"
+#          echo "🚨 Approval required before proceeding!"
+#          exit 1  # ❌ Fails workflow to block PR merge
+#
+#      - name: Approvals Granted – Pass Workflow
+#        if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approval.outputs.manifest_approved == 'true'
+#        run: |
+#          echo "✅ Manifest changes approved. Proceeding!"

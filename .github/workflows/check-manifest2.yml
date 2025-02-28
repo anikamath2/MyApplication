@@ -1,0 +1,96 @@
+name: Ensure Manifest Approval
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, review_requested, review_submitted]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  require-approval:
+    name: Ensure Manifest is Approved
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set Up JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set Up Gradle
+        uses: gradle/gradle-build-action@v3
+
+      - name: Generate Merged AndroidManifest.xml
+        run: |
+          ./gradlew :app:processDebugManifest
+          cp app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml merged_AndroidManifest.xml
+
+      - name: Check for AndroidManifest.xml Changes
+        id: check_manifest
+        run: |
+          if git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt; then
+            echo "manifest_changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "manifest_changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload Manifest Diff (For Review)
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-diff
+          path: manifest_diff.txt
+
+      - name: Check for Required Approvers' Approval
+        id: check_approval
+        if: steps.check_manifest.outputs.manifest_changed == 'true'
+        run: |
+          # Hardcoded list of required approvers
+          REQUIRED_APPROVERS="anikamath2 rohanghosh-hotstar"  # 👈 Replace with your required approvers
+
+          # Fetch the list of users who have approved the PR
+          APPROVED_USERS=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews --jq '.[] | select(.state=="APPROVED") | .user.login')
+
+          # Check if all required approvers have approved
+          for APPROVER in $REQUIRED_APPROVERS; do
+            if ! echo "$APPROVED_USERS" | grep -q "$APPROVER"; then
+              echo "manifest_approved=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          done
+          echo "manifest_approved=true" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post PR Comment on Manifest Change
+        if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approval.outputs.manifest_approved == 'false'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo, number } = context.issue;
+            github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: number,
+              body: "❌ **Manifest changes detected!**\n\n🚨 Please request a review from the required approvers: user1, user2, user3."
+            });
+
+      - name: Fail Workflow if Manifest Changes Detected and Not Approved
+        if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approval.outputs.manifest_approved == 'false'
+        run: |
+          echo "❌ AndroidManifest.xml has changes!"
+          echo "🚨 Approval required from user1, user2, user3 before proceeding!"
+          exit 1  # ❌ Fails workflow to block PR merge
+
+      - name: Approvals Granted – Pass Workflow
+        if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approval.outputs.manifest_approved == 'true'
+        run: |
+          echo "✅ Manifest changes approved by required approvers. Proceeding!"
