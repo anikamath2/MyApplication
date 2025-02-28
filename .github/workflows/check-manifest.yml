@@ -28,7 +28,7 @@ jobs:
       - name: Generate Merged AndroidManifest.xml
         run: |
           ./gradlew :app:processDebugManifest
-          cp app/build/intermediates/merged_manifest/debug/AndroidManifest.xml merged_AndroidManifest.xml
+          cp app/build/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml merged_AndroidManifest.xml
 
       - name: Check for AndroidManifest.xml Changes
         run: |
