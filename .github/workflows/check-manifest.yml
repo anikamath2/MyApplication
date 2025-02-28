@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+  pull-requests: write  # ✅ Allows posting comments on PRs
+
 jobs:
   check-android-manifest:
     name: Compare Merged AndroidManifest.xml
