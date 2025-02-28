@@ -1,11 +1,9 @@
 name: Check Merged AndroidManifest Changes
 
 on:
+  workflow_dispatch:
   pull_request:
-    types:
-      - opened       # Runs when the PR is first created
-      - synchronize  # Runs on every new commit push to the PR branch
-      - reopened     # Runs if the PR is reopened
+    types: [opened, synchronize, reopened]
 
 jobs:
   check-android-manifest:
