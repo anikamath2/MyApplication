@@ -1,4 +1,4 @@
-name: Check Merged AndroidManifest Changes
+name: Ensure Manifest Approval
 
 on:
   pull_request:
@@ -6,20 +6,20 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write  # ✅ Allows posting comments on PRs
+  pull-requests: write
 
 jobs:
-  check-android-manifest:
-    name: Compare Merged AndroidManifest.xml
+  require-approval:
+    name: Ensure Manifest is Approved
     runs-on: ubuntu-latest
-    outputs:
-      manifest_changed: ${{ steps.check_manifest.outputs.changed }}
+    environment:
+      name: ManifestApproval  # 👈 Uses GitHub Environment Protection Rules
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Ensures we can check diffs properly
+          fetch-depth: 0
 
       - name: Set Up JDK
         uses: actions/setup-java@v3
@@ -39,9 +39,9 @@ jobs:
         id: check_manifest
         run: |
           if git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt; then
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "manifest_changed=false" >> $GITHUB_OUTPUT
           else
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "manifest_changed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Upload Manifest Diff (For Review)
@@ -50,14 +50,8 @@ jobs:
           name: manifest-diff
           path: manifest_diff.txt
 
-  require-approval:
-    name: Ensure Manifest is Approved
-    needs: check-android-manifest
-    if: ${{ needs.check-android-manifest.outputs.manifest_changed == 'true' }}
-    runs-on: ubuntu-latest
-
-    steps:
       - name: Post PR Comment on Manifest Change
+        if: steps.check_manifest.outputs.manifest_changed == 'true'
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -71,7 +65,8 @@ jobs:
             });
 
       - name: Fail Workflow if Manifest Changes Detected
+        if: steps.check_manifest.outputs.manifest_changed == 'true'
         run: |
           echo "❌ AndroidManifest.xml has changes!"
           echo "🚨 Approval required before proceeding!"
-          exit 1  # ❌ Force failure to block PR merge
+          exit 1  # ❌ Fails workflow to block PR merge
