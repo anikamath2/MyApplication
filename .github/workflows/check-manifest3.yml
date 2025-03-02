@@ -1,7 +1,6 @@
 name: Ensure Manifest Approval
 
 on:
-  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, review_requested, review_submitted]
 
@@ -13,6 +12,8 @@ jobs:
   require-approval:
     name: Ensure Manifest is Approved
     runs-on: ubuntu-latest
+    environment:
+      name: ManifestApproval  # 👈 Uses GitHub Environment Protection Rules
 
     steps:
       - name: Checkout Code
@@ -38,9 +39,9 @@ jobs:
         id: check_manifest
         run: |
           if git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt; then
-            echo "manifest_changed=false" >> $GITHUB_OUTPUT
+            echo "manifest_changed=true" >> $GITHUB_ENV
           else
-            echo "manifest_changed=true" >> $GITHUB_OUTPUT
+            echo "manifest_changed=false" >> $GITHUB_ENV
           fi
 
       - name: Upload Manifest Diff (For Review)
@@ -49,26 +50,37 @@ jobs:
           name: manifest-diff
           path: manifest_diff.txt
 
-      - name: Get PR Approvals
+      - name: Get PR Approvals (Check for Stale & Authorized Approvals)
         id: check_approvals
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo, number } = context.issue;
-            const reviews = await github.rest.pulls.listReviews({ owner, repo, pull_number: number });
-            const approvals = reviews.data.filter(r => r.state === "APPROVED");
 
-            if (approvals.length > 0) {
-              console.log("✅ PR has been approved.");
+            // Get latest commit SHA
+            const pr = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const latestCommitSha = pr.data.head.sha;
+
+            // Get all PR reviews
+            const reviews = await github.rest.pulls.listReviews({ owner, repo, pull_number: number });
+
+            // Find valid approvals (submitted after the latest commit)
+            const validApprovals = reviews.data.filter(r => 
+              r.state === "APPROVED" &&
+              new Date(r.submitted_at) > new Date(pr.data.updated_at)
+            );
+
+            if (validApprovals.length > 0) {
+              console.log("✅ PR has a valid approval.");
               core.setOutput("approved", "true");
             } else {
-              console.log("❌ PR is NOT approved.");
+              console.log("❌ No valid approvals found.");
               core.setOutput("approved", "false");
             }
 
-      - name: Post PR Comment on Manifest Change (Only if No Approval)
-        if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approvals.outputs.approved == 'false'
+      - name: Post PR Comment on Manifest Change
+        if: env.manifest_changed == 'true' && steps.check_approvals.outputs.approved == 'false'
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -81,31 +93,28 @@ jobs:
               body: "❌ **Manifest changes detected!**\n\n🚨 Please take the necessary approvals for manifest changes before proceeding."
             });
 
-      - name: Fail Workflow if Manifest Changes are Unapproved
-        if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approvals.outputs.approved == 'false'
+      - name: Fail Workflow if Manifest Changes Detected and No Approval
+        if: env.manifest_changed == 'true' && steps.check_approvals.outputs.approved == 'false'
         run: |
           echo "❌ AndroidManifest.xml has changes!"
           echo "🚨 Approval required before proceeding!"
-          exit 1
+          exit 1  # ❌ Fails workflow to block PR merge
 
   update-baseline:
     name: Update Baseline Manifest
-    runs-on: ubuntu-latest
     needs: require-approval
-    if: needs.require-approval.outputs.manifest_changed == 'true'
+    if: needs.require-approval.result == 'success' && env.manifest_changed == 'true'
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Update Baseline AndroidManifest.xml
-        run: cp merged_AndroidManifest.xml baseline_AndroidManifest.xml
-
-      - name: Commit & Push Changes
+      - name: Update Baseline Manifest
         run: |
+          mv merged_AndroidManifest.xml baseline_AndroidManifest.xml
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add baseline_AndroidManifest.xml
           git commit -m "Update baseline AndroidManifest.xml"
-          git push origin HEAD:${{ github.event.pull_request.base.ref }}
+          git push
