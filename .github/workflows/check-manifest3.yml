@@ -3,12 +3,9 @@ name: Ensure Manifest Approval
 on:
   pull_request:
     types: [opened, synchronize, reopened, review_requested, review_submitted]
-  push:
-    branches:
-      - main  # ✅ Trigger when merged into main
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
 
 jobs:
@@ -41,37 +38,15 @@ jobs:
         run: |
           if git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt; then
             echo "manifest_changed=false" >> $GITHUB_ENV
-            echo "false" > manifest_status.txt
           else
             echo "manifest_changed=true" >> $GITHUB_ENV
-            echo "true" > manifest_status.txt
           fi
-
-      - name: Upload Manifest Change Status
-        uses: actions/upload-artifact@v4
-        with:
-          name: manifest-status
-          path: manifest_status.txt
 
       - name: Upload Manifest Diff (For Review)
         uses: actions/upload-artifact@v4
         with:
           name: manifest-diff
           path: manifest_diff.txt
-
-      - name: Post PR Comment on Manifest Change
-        if: env.manifest_changed == 'true'
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { owner, repo, number } = context.issue;
-            github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: number,
-              body: "❌ **Manifest changes detected!**\n\n🚨 Please request approval from @anikamath2 or @rohanghosh-hotstar or @shubham-patwarika-hs before merging."
-            });
 
       - name: Check for PR Approvals
         if: env.manifest_changed == 'true'
@@ -86,78 +61,59 @@ jobs:
               pull_number: context.issue.number,
             });
 
-            const approvedUsers = ["anikamath2", "rohanghosh-hotstar", "shubham-patwarika-hs"];  // Allowed reviewers
+            const approvedUsers = ["user1", "user2"];  // Allowed reviewers
             const approvals = reviews.filter(review => 
               review.state === "APPROVED" && approvedUsers.includes(review.user.login)
             );
 
             if (approvals.length > 0) {
-              console.log("✅ Manifest changes approved!");
-              console.log("Re-running workflow...");
-              await github.rest.actions.reRunWorkflow({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                run_id: context.runId
-              });
+              console.log("✅ Manifest changes already approved!");
+              console.log("Skipping PR comment & rerun...");
+              console.log("Approved by:", approvals.map(r => r.user.login).join(", "));
+              console.log("approved=true" >> $GITHUB_ENV)
+              exit 0  # ✅ Stop workflow here (NO rerun)
             } else {
-              console.log("❌ Approval required from authorized reviewers!");
-              process.exit(1);
+              console.log("approved=false" >> $GITHUB_ENV)
             }
 
-      - name: Fail Workflow if Approval is Not Given
-        if: env.manifest_changed == 'true' && steps.check_approvals.outputs.approved != 'true'
+      - name: Post PR Comment on Manifest Change
+        if: env.manifest_changed == 'true' && env.approved == 'false'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo, number } = context.issue;
+            github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: number,
+              body: "❌ **Manifest changes detected!**\n\n🚨 Please take the necessary approvals for manifest changes before proceeding."
+            });
+
+      - name: Fail Workflow if Manifest Changes Detected Without Approval
+        if: env.manifest_changed == 'true' && env.approved == 'false'
         run: |
-          echo "❌ Manifest changes detected but not approved!"
-          exit 1  # Block PR merge
+          echo "❌ AndroidManifest.xml has changes!"
+          echo "🚨 Approval required before proceeding!"
+          exit 1  # ❌ Fails workflow to block PR merge
 
   update-baseline:
     name: Update Baseline Manifest
-    runs-on: ubuntu-latest
     needs: require-approval
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'  # ✅ Run only after merge
+    if: needs.require-approval.result == 'success' && env.manifest_changed == 'true'
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download Manifest Change Status
-        uses: actions/download-artifact@v4
-        with:
-          name: manifest-status
-
-      - name: Read Manifest Change Status
-        id: read_manifest_status
+      - name: Update Baseline Manifest
         run: |
-          MANIFEST_CHANGED=$(cat manifest_status.txt)
-          echo "manifest_changed=$MANIFEST_CHANGED" >> $GITHUB_ENV
-
-      - name: Exit if No Manifest Change
-        if: env.manifest_changed != 'true'
-        run: |
-          echo "✅ No manifest changes detected. Skipping baseline update."
-          exit 0
-
-      - name: Set Up JDK
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Set Up Gradle
-        uses: gradle/gradle-build-action@v3
-
-      - name: Generate Updated Merged AndroidManifest.xml
-        run: |
-          ./gradlew :app:processDebugManifest
-          cp app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml baseline_AndroidManifest.xml
-
-      - name: Commit and Push Updated Baseline
-        run: |
+          cp merged_AndroidManifest.xml baseline_AndroidManifest.xml
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
           git add baseline_AndroidManifest.xml
-          git commit -m "🔄 Update baseline AndroidManifest.xml after merge [GitHub Actions]"
-          git push origin main  # ✅ Push changes to main branch
+          git commit -m "Update baseline AndroidManifest.xml"
+          git push
