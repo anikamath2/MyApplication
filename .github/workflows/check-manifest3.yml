@@ -60,7 +60,14 @@ jobs:
 
             // Get latest commit SHA
             const pr = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            const latestCommitSha = pr.data.head.sha;
+            
+            const { data: commits } = await github.rest.pulls.listCommits({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number
+            });
+
+            const lastCommit = commits[commits.length - 1];
 
             // Get all PR reviews
             const reviews = await github.rest.pulls.listReviews({ owner, repo, pull_number: number });
@@ -68,7 +75,7 @@ jobs:
             // Find valid approvals (submitted after the latest commit)
             const validApprovals = reviews.data.filter(r => 
               r.state === "APPROVED" &&
-              new Date(r.submitted_at) > new Date(pr.data.updated_at)
+              new Date(r.submitted_at) > new Date(lastCommit.commit.author.date)
             );
 
             if (validApprovals.length > 0) {
@@ -93,10 +100,10 @@ jobs:
               body: "❌ **Manifest changes detected!**\n\n🚨 Please take the necessary approvals for manifest changes before proceeding."
             });
 
-      - name: Fail Workflow if Manifest Changes Detected and No Approval
+      - name: ❌ Fail Workflow if No Approval Found
         if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approvals.outputs.approved == 'false'
         run: |
-          echo "❌ AndroidManifest.xml has changes!"
+          echo "❌ AndroidManifest.xml has changes but no valid approvals found!"
           echo "🚨 Approval required before proceeding!"
           exit 1  # ❌ Fails workflow to block PR merge
 
