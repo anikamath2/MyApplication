@@ -1,6 +1,7 @@
 name: Ensure Manifest Approval
 
 on:
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, review_requested, review_submitted]
 
