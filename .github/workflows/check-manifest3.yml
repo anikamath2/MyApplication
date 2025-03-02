@@ -61,7 +61,7 @@ jobs:
               pull_number: context.issue.number,
             });
 
-            const approvedUsers = ["user1", "user2"];  // Allowed reviewers
+            const approvedUsers = ["anikamath2", "shubham-patwarika-hs"];  // Allowed reviewers
             const approvals = reviews.filter(review => 
               review.state === "APPROVED" && approvedUsers.includes(review.user.login)
             );
