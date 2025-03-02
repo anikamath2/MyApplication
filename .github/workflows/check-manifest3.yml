@@ -12,8 +12,6 @@ jobs:
   require-approval:
     name: Ensure Manifest is Approved
     runs-on: ubuntu-latest
-    environment:
-      name: ManifestApproval  # 👈 Uses GitHub Environment Protection Rules
 
     steps:
       - name: Checkout Code
@@ -56,33 +54,33 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const APPROVERS = ["anikamath2", "rohanghosh-hotstar"]; // Hardcoded approvers
             const { owner, repo, number } = context.issue;
 
             // Get latest commit SHA
-            const pr = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            
             const { data: commits } = await github.rest.pulls.listCommits({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            pull_number: context.issue.number
+              owner,
+              repo,
+              pull_number: number
             });
 
             const lastCommit = commits[commits.length - 1];
 
             // Get all PR reviews
-            const reviews = await github.rest.pulls.listReviews({ owner, repo, pull_number: number });
+            const { data: reviews } = await github.rest.pulls.listReviews({ owner, repo, pull_number: number });
 
-            // Find valid approvals (submitted after the latest commit)
-            const validApprovals = reviews.data.filter(r => 
+            // Find valid approvals (submitted after the latest commit by an authorized approver)
+            const validApprovals = reviews.filter(r => 
               r.state === "APPROVED" &&
+              APPROVERS.includes(r.user.login) &&
               new Date(r.submitted_at) > new Date(lastCommit.commit.author.date)
             );
 
             if (validApprovals.length > 0) {
-              console.log("✅ PR has a valid approval.");
+              console.log("✅ PR has a valid approval from an authorized approver.");
               core.setOutput("approved", "true");
             } else {
-              console.log("❌ No valid approvals found.");
+              console.log("❌ No valid approvals from authorized approvers found.");
               core.setOutput("approved", "false");
             }
 
@@ -97,7 +95,7 @@ jobs:
               owner,
               repo,
               issue_number: number,
-              body: "❌ **Manifest changes detected!**\n\n🚨 Please take the necessary approvals for manifest changes before proceeding."
+              body: "❌ **Manifest changes detected!**\n\n🚨 Please take the necessary approvals from authorized reviewers (`anikamath2`, `rohanghosh-hotstar`) before proceeding."
             });
 
       - name: ❌ Fail Workflow if No Approval Found
