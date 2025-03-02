@@ -3,6 +3,8 @@ name: Ensure Manifest Approval
 on:
   pull_request:
     types: [opened, synchronize, reopened, review_requested, review_submitted]
+  pull_request_review:
+    types: [ submitted ]
 
 permissions:
   contents: read
