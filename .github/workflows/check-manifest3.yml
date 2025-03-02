@@ -1,0 +1,163 @@
+name: Ensure Manifest Approval
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, review_requested, review_submitted]
+  push:
+    branches:
+      - main  # ✅ Trigger when merged into main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  require-approval:
+    name: Ensure Manifest is Approved
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set Up JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set Up Gradle
+        uses: gradle/gradle-build-action@v3
+
+      - name: Generate Merged AndroidManifest.xml
+        run: |
+          ./gradlew :app:processDebugManifest
+          cp app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml merged_AndroidManifest.xml
+
+      - name: Check for AndroidManifest.xml Changes
+        id: check_manifest
+        run: |
+          if git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt; then
+            echo "manifest_changed=false" >> $GITHUB_ENV
+            echo "false" > manifest_status.txt
+          else
+            echo "manifest_changed=true" >> $GITHUB_ENV
+            echo "true" > manifest_status.txt
+          fi
+
+      - name: Upload Manifest Change Status
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-status
+          path: manifest_status.txt
+
+      - name: Upload Manifest Diff (For Review)
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-diff
+          path: manifest_diff.txt
+
+      - name: Post PR Comment on Manifest Change
+        if: env.manifest_changed == 'true'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo, number } = context.issue;
+            github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: number,
+              body: "❌ **Manifest changes detected!**\n\n🚨 Please request approval from @user1 or @user2 before merging."
+            });
+
+      - name: Check for PR Approvals
+        if: env.manifest_changed == 'true'
+        id: check_approvals
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            const approvedUsers = ["user1", "user2"];  // Allowed reviewers
+            const approvals = reviews.filter(review => 
+              review.state === "APPROVED" && approvedUsers.includes(review.user.login)
+            );
+
+            if (approvals.length > 0) {
+              console.log("✅ Manifest changes approved!");
+              console.log("Re-running workflow...");
+              await github.rest.actions.reRunWorkflow({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: context.runId
+              });
+            } else {
+              console.log("❌ Approval required from authorized reviewers!");
+              process.exit(1);
+            }
+
+      - name: Fail Workflow if Approval is Not Given
+        if: env.manifest_changed == 'true' && steps.check_approvals.outputs.approved != 'true'
+        run: |
+          echo "❌ Manifest changes detected but not approved!"
+          exit 1  # Block PR merge
+
+  update-baseline:
+    name: Update Baseline Manifest
+    runs-on: ubuntu-latest
+    needs: require-approval
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'  # ✅ Run only after merge
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Manifest Change Status
+        uses: actions/download-artifact@v4
+        with:
+          name: manifest-status
+
+      - name: Read Manifest Change Status
+        id: read_manifest_status
+        run: |
+          MANIFEST_CHANGED=$(cat manifest_status.txt)
+          echo "manifest_changed=$MANIFEST_CHANGED" >> $GITHUB_ENV
+
+      - name: Exit if No Manifest Change
+        if: env.manifest_changed != 'true'
+        run: |
+          echo "✅ No manifest changes detected. Skipping baseline update."
+          exit 0
+
+      - name: Set Up JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set Up Gradle
+        uses: gradle/gradle-build-action@v3
+
+      - name: Generate Updated Merged AndroidManifest.xml
+        run: |
+          ./gradlew :app:processDebugManifest
+          cp app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml baseline_AndroidManifest.xml
+
+      - name: Commit and Push Updated Baseline
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add baseline_AndroidManifest.xml
+          git commit -m "🔄 Update baseline AndroidManifest.xml after merge [GitHub Actions]"
+          git push origin main  # ✅ Push changes to main branch
