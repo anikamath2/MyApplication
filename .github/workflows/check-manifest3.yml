@@ -70,7 +70,7 @@ jobs:
               owner,
               repo,
               issue_number: number,
-              body: "❌ **Manifest changes detected!**\n\n🚨 Please request approval from @user1 or @user2 before merging."
+              body: "❌ **Manifest changes detected!**\n\n🚨 Please request approval from @anikamath2 or @rohanghosh-hotstar before merging."
             });
 
       - name: Check for PR Approvals
@@ -86,7 +86,7 @@ jobs:
               pull_number: context.issue.number,
             });
 
-            const approvedUsers = ["user1", "user2"];  // Allowed reviewers
+            const approvedUsers = ["anikamath2", "rohanghosh-hotstar"];  // Allowed reviewers
             const approvals = reviews.filter(review => 
               review.state === "APPROVED" && approvedUsers.includes(review.user.login)
             );
