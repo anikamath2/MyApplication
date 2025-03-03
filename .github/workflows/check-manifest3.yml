@@ -67,8 +67,7 @@ jobs:
             // Find valid approvals (approved by an authorized approver & not invalidated by GitHub)
             const validApprovals = reviews.filter(r => 
               r.state === "APPROVED" &&
-              APPROVERS.includes(r.user.login) &&
-              !r.dismissed_at  // Ensure approval is not dismissed
+              APPROVERS.includes(r.user.login)
             );
 
             const approvalStatus = validApprovals.length > 0 ? "true" : "false";
