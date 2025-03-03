@@ -2,9 +2,7 @@ name: Ensure Manifest Approval
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, review_requested, edited]
-  pull_request_review:
-    types: [ submitted ]  # Runs only when a review is submitted
+    types: [opened, synchronize, reopened, review_requested, review_submitted]
 
 permissions:
   contents: read
