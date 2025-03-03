@@ -51,66 +51,64 @@ jobs:
 
       - name: Get PR Approvals (Check for Stale & Authorized Approvals)
         id: check_approvals
-        if: steps.check_manifest.outputs.manifest_changed == 'true'  # ✅ Run only if manifest changed
+        if: steps.check_manifest.outputs.manifest_changed == 'true'
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-              const APPROVERS = ["anikamath2", "rohanghosh-hotstar"]; // Hardcoded approvers
-              const { owner, repo, number } = context.issue;
-            
-              const { data: commits } = await github.rest.pulls.listCommits({
-                owner,
-                repo,
-                pull_number: number
-              });
-            
-              const { data: filesChanged } = await github.rest.pulls.listFiles({
-                owner,
-                repo,
-                pull_number: number
-              });
-              
-              const manifestCommit = commits.reverse().find(async commit => {
+            const APPROVERS = ["anikamath2", "rohanghosh-hotstar"]; // Hardcoded approvers
+            const { owner, repo, number } = context.issue;
+
+            // Get all commits in the PR
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner,
+              repo,
+              pull_number: number
+            });
+
+            // Find the last commit that modified AndroidManifest.xml
+            let lastManifestCommitTime = null;
+            for (const commit of commits.reverse()) {
               const { data: commitDetails } = await github.rest.repos.getCommit({
                 owner,
                 repo,
                 ref: commit.sha
               });
-                return commitDetails.files.some(file => file.filename.includes("AndroidManifest.xml"));
-              });
-                
-              if (!manifestCommit) {
-                console.log("✅ No manifest changes detected. Skipping approval check.");
-                const fs = require("fs");
-                fs.appendFileSync(process.env.GITHUB_OUTPUT, `approved=true\n`);
-                return;
+
+              if (commitDetails.files.some(file => file.filename.includes("AndroidManifest.xml"))) {
+                lastManifestCommitTime = new Date(commit.commit.author.date);
+                break;
               }
-            
-              // Step 3: Get all PR reviews
-              const { data: reviews } = await github.rest.pulls.listReviews({ owner, repo, pull_number: number });
-              
-              // Step 4: Find valid approvals (submitted AFTER the last manifest change)
-              const validApprovals = reviews.filter(r =>
+            }
+
+            if (!lastManifestCommitTime) {
+              console.log("⚠️ No manifest changes detected in PR history.");
+              return;
+            }
+
+            console.log(`🔍 Last AndroidManifest.xml change: ${lastManifestCommitTime}`);
+
+            // Get all PR reviews
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner,
+              repo,
+              pull_number: number
+            });
+
+            // Find valid approvals (submitted after the latest manifest change)
+            const validApprovals = reviews.filter(r => 
               r.state === "APPROVED" &&
               APPROVERS.includes(r.user.login) &&
-              new Date(r.submitted_at) > new Date(manifestCommit.commit.author.date)
-              );       
+              new Date(r.submitted_at) > lastManifestCommitTime
+            );
+
+            // Set output based on approval status
+            const approvalStatus = validApprovals.length > 0 ? "true" : "false";
+            console.log(`Approval Status: ${approvalStatus}`);
             
-              console.log(`Valid approvals: ${validApprovals}`);
-            
-              // Step 5: Check if PR is still in an approved state
-              const { data: prData } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            
-              // Step 6: Final approval check
-              const isApproved = validApprovals.length > 0;
-            
-              console.log(`Final check: ${isApproved}`);
-            
-              console.log(`Final Approval Status: ${isApproved ? "✅ Approved" : "❌ Not Approved"}`);
-              
-              const fs = require("fs");
-              fs.appendFileSync(process.env.GITHUB_OUTPUT, `approved=${isApproved}\n`);
+            // Write to output
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `approved=${approvalStatus}\n`);
+
 
 
       - name: Post PR Comment on Manifest Change
