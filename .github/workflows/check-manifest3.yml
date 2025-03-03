@@ -36,10 +36,11 @@ jobs:
       - name: Check for AndroidManifest.xml Changes
         id: check_manifest
         run: |
-          if git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt && [ -s manifest_diff.txt ]; then
-            echo "manifest_changed=true" >> $GITHUB_OUTPUT
+          git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt || true
+          if [ -s manifest_diff.txt ]; then
+          echo "manifest_changed=true" >> $GITHUB_OUTPUT
           else
-            echo "manifest_changed=false" >> $GITHUB_OUTPUT
+          echo "manifest_changed=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Upload Manifest Diff (For Review)
