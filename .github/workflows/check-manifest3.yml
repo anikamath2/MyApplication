@@ -101,12 +101,9 @@ jobs:
             
               // Step 5: Check if PR is still in an approved state
               const { data: prData } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-              const prApproved = prData.review_decision === "approved";
-            
-              console.log(`Pr approved state: ${prApproved}`);
             
               // Step 6: Final approval check
-              const isApproved = prApproved && validApprovals.length > 0;
+              const isApproved = validApprovals.length > 0;
             
               console.log(`Final check: ${isApproved}`);
             
