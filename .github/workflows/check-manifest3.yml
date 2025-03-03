@@ -2,7 +2,7 @@ name: Ensure Manifest Approval
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, review_requested, review_submitted]
+    types: [opened, synchronize, reopened, review_requested, review_submitted, closed]
 
 permissions:
   contents: read
@@ -136,7 +136,7 @@ jobs:
   update-baseline:
     name: Update Baseline Manifest
     needs: require-approval
-    if: needs.require-approval.outputs.manifest_changed == 'true' && needs.require-approval.result == 'success'
+    if: github.event.pull_request.merged == true && needs.require-approval.outputs.manifest_changed == 'true'
     runs-on: ubuntu-latest
 
     steps:
