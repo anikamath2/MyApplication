@@ -1,0 +1,63 @@
+name: Ensure Manifest Approval
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, review_requested, review_submitted, closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  require-approval:
+    name: Ensure Manifest is Approved
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set Up JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set Up Gradle
+        uses: gradle/gradle-build-action@v3
+
+      - name: Generate Merged AndroidManifest.xml
+        run: |
+          ./gradlew :app:processDebugManifest
+          cp app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml merged_AndroidManifest.xml
+
+      - name: Check for AndroidManifest.xml Changes
+        id: check_manifest
+        run: |
+          git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt || true
+          if [ -s manifest_diff.txt ]; then
+          echo "manifest_changed=true" >> $GITHUB_OUTPUT
+          else
+          echo "manifest_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+  update-baseline:
+    name: Update Baseline Manifest
+    needs: require-approval
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Update Baseline Manifest
+        run: |
+          mv merged_AndroidManifest.xml baseline_AndroidManifest.xml
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add baseline_AndroidManifest.xml
+          git commit -m "Update baseline AndroidManifest.xml"
+          git push
