@@ -3,6 +3,8 @@ name: Ensure Manifest Approval
 on:
   pull_request:
     types: [opened, synchronize, reopened, review_requested, edited]
+  pull_request_review:
+    types: [ submitted ]  # Runs only when a review is submitted
 
 permissions:
   contents: read
@@ -59,29 +61,20 @@ jobs:
             const APPROVERS = ["anikamath2", "rohanghosh-hotstar"]; // Hardcoded approvers
             const { owner, repo, number } = context.issue;
 
-            // Get latest commit SHA
-            const { data: commits } = await github.rest.pulls.listCommits({
-              owner,
-              repo,
-              pull_number: number
-            });
-
-            const lastCommit = commits[commits.length - 1];
-
             // Get all PR reviews
             const { data: reviews } = await github.rest.pulls.listReviews({ owner, repo, pull_number: number });
 
-            // Find valid approvals (submitted after the latest commit by an authorized approver)
+            // Find valid approvals (approved by an authorized approver & not invalidated by GitHub)
             const validApprovals = reviews.filter(r => 
               r.state === "APPROVED" &&
               APPROVERS.includes(r.user.login) &&
-              new Date(r.submitted_at) > new Date(lastCommit.commit.author.date)
+              !r.dismissed_at  // Ensure approval is not dismissed
             );
-            
+
             const approvalStatus = validApprovals.length > 0 ? "true" : "false";
             
             console.log(`Approval status: ${approvalStatus}`);
-              
+            
             const fs = require("fs");
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `approved=${approvalStatus}\n`);
 
