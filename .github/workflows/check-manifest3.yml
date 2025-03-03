@@ -50,6 +50,7 @@ jobs:
 
       - name: Get PR Approvals (Check for Stale & Authorized Approvals)
         id: check_approvals
+        if: steps.check_manifest.outputs.manifest_changed == 'true'  # ✅ Run only if manifest changed
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -75,14 +76,13 @@ jobs:
               APPROVERS.includes(r.user.login) &&
               new Date(r.submitted_at) > new Date(lastCommit.commit.author.date)
             );
-
-            if (validApprovals.length > 0) {
-              console.log("✅ PR has a valid approval from an authorized approver.");
-              core.setOutput("approved", "true");
-            } else {
-              console.log("❌ No valid approvals from authorized approvers found.");
-              core.setOutput("approved", "false");
-            }
+            
+            const approvalStatus = validApprovals.length > 0 ? "true" : "false";
+            
+            console.log(`Approval status: ${approvalStatus}`);
+              
+            const fs = require("fs");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `approved=${approvalStatus}\n`);
 
       - name: Post PR Comment on Manifest Change
         if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approvals.outputs.approved == 'false'
