@@ -97,14 +97,20 @@ jobs:
               r.state === "APPROVED" &&
               APPROVERS.includes(r.user.login) &&
               new Date(r.submitted_at) > new Date(manifestCommit.commit.author.date)
-              );
+              );       
+            
+              console.log(`Valid approvals: ${validApprovals}`);
             
               // Step 5: Check if PR is still in an approved state
               const { data: prData } = await github.rest.pulls.get({ owner, repo, pull_number: number });
               const prApproved = prData.review_decision === "approved";
             
+              console.log(`Pr approved state: ${prApproved}`);
+            
               // Step 6: Final approval check
               const isApproved = prApproved && validApprovals.length > 0;
+            
+              console.log(`Final check: ${isApproved}`);
             
               console.log(`Final Approval Status: ${isApproved ? "✅ Approved" : "❌ Not Approved"}`);
               
