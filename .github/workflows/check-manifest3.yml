@@ -58,24 +58,59 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const APPROVERS = ["anikamath2", "rohanghosh-hotstar"]; // Hardcoded approvers
-            const { owner, repo, number } = context.issue;
-
-            // Get all PR reviews
-            const { data: reviews } = await github.rest.pulls.listReviews({ owner, repo, pull_number: number });
-
-            // Find valid approvals (approved by an authorized approver & not invalidated by GitHub)
-            const validApprovals = reviews.filter(r => 
+              const APPROVERS = ["anikamath2", "rohanghosh-hotstar"]; // Hardcoded approvers
+              const { owner, repo, number } = context.issue;
+            
+              const { data: commits } = await github.rest.pulls.listCommits({
+                owner,
+                repo,
+                pull_number: number
+              });
+            
+              const { data: filesChanged } = await github.rest.pulls.listFiles({
+                owner,
+                repo,
+                pull_number: number
+              });
+              
+              const manifestCommit = commits.reverse().find(async commit => {
+              const { data: commitDetails } = await github.rest.repos.getCommit({
+                owner,
+                repo,
+                ref: commit.sha
+              });
+                return commitDetails.files.some(file => file.filename.includes("AndroidManifest.xml"));
+              });
+                
+              if (!manifestCommit) {
+                console.log("✅ No manifest changes detected. Skipping approval check.");
+                const fs = require("fs");
+                fs.appendFileSync(process.env.GITHUB_OUTPUT, `approved=true\n`);
+                return;
+              }
+            
+              // Step 3: Get all PR reviews
+              const { data: reviews } = await github.rest.pulls.listReviews({ owner, repo, pull_number: number });
+              
+              // Step 4: Find valid approvals (submitted AFTER the last manifest change)
+              const validApprovals = reviews.filter(r =>
               r.state === "APPROVED" &&
-              APPROVERS.includes(r.user.login)
-            );
+              APPROVERS.includes(r.user.login) &&
+              new Date(r.submitted_at) > new Date(manifestCommit.commit.author.date)
+              );
+            
+              // Step 5: Check if PR is still in an approved state
+              const { data: prData } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+              const prApproved = prData.review_decision === "approved";
+            
+              // Step 6: Final approval check
+              const isApproved = prApproved && validApprovals.length > 0;
+            
+              console.log(`Final Approval Status: ${isApproved ? "✅ Approved" : "❌ Not Approved"}`);
+              
+              const fs = require("fs");
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `approved=${isApproved}\n`);
 
-            const approvalStatus = validApprovals.length > 0 ? "true" : "false";
-            
-            console.log(`Approval status: ${approvalStatus}`);
-            
-            const fs = require("fs");
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, `approved=${approvalStatus}\n`);
 
       - name: Post PR Comment on Manifest Change
         if: steps.check_manifest.outputs.manifest_changed == 'true' && steps.check_approvals.outputs.approved == 'false'
@@ -101,7 +136,7 @@ jobs:
   update-baseline:
     name: Update Baseline Manifest
     needs: require-approval
-    if: needs.require-approval.result == 'success' && needs.require-approval.outputs.manifest_changed == 'true'
+    if: needs.require-approval.outputs.manifest_changed == 'true' && needs.require-approval.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
