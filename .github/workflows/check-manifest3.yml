@@ -56,6 +56,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const fs = require("fs"); // ✅ Import fs module
             const APPROVERS = ["anikamath2", "rohanghosh-hotstar"]; // Hardcoded approvers
             const { owner, repo, number } = context.issue;
 
