@@ -3,9 +3,9 @@ name: Ensure Manifest Approval
 on:
   pull_request:
     types: [opened, synchronize, reopened, review_requested]
-    push:
-      branches:
-        - main # or your target branch
+  push:
+    branches:
+      - main # or your target branch
 
 permissions:
   contents: read
