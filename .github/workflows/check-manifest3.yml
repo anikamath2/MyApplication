@@ -49,6 +49,7 @@ jobs:
 
       - name: Upload Manifest Diff (For Review)
         uses: actions/upload-artifact@v4
+        if: steps.check_manifest.outputs.manifest_changed == 'true'  # Add this condition
         with:
           name: manifest-diff
           path: manifest_diff.txt
