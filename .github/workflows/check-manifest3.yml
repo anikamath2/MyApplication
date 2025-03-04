@@ -39,7 +39,7 @@ jobs:
       - name: Check for AndroidManifest.xml Changes
         id: check_manifest
         run: |
-          git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt
+          git diff --no-index --word-diff=plain baseline_AndroidManifest.xml merged_AndroidManifest.xml > manifest_diff.txt || true
           if [[ -s manifest_diff.txt ]]; then
             echo "manifest_changed=true" >> $GITHUB_OUTPUT  # Set to true if diff exists (file not empty)
           else
