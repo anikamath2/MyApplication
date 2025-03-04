@@ -1,4 +1,4 @@
-name: Ensure Manifest Approval
+name: Post merge job
 
 on:
   push:
