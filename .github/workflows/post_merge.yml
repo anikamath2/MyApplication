@@ -14,7 +14,6 @@ jobs:
   update-baseline:
     name: Update Baseline Manifest
     needs: require-approval
-    if: github.ref == 'refs/heads/main'  # Run only on push to main (after merge)
     runs-on: ubuntu-latest
 
     steps:
